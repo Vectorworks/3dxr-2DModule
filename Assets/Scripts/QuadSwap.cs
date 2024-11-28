@@ -28,10 +28,10 @@ public class QuadSwap : MonoBehaviour {
 
     private void OnEnable() {
         cameraZoom.ZoomLevelChanged += OnZoomLevelChanged;
+        cameraZoom.ZoomComplete += OnZoomComplete;
         cameraPan.TranslationOngoing += OnTranslationDelta;
         cameraPan.TranslationComplete += OnTranslationComplete;
     }
-
 
 
     private void OnDisable() {
@@ -49,8 +49,8 @@ public class QuadSwap : MonoBehaviour {
     }
 
     public void OnTranslationDelta() {
-        GetCurrentCameraParameters();
-        ResizeHighResQuad();
+        //GetCurrentCameraParameters();
+        //ResizeHighResQuad();
     }
 
     public void OnTranslationComplete() {
@@ -61,10 +61,13 @@ public class QuadSwap : MonoBehaviour {
     public void OnZoomLevelChanged(float zoom) {
         currentZoom = zoom;
 
-        GetCurrentCameraParameters();
+    }
+
+    private void OnZoomComplete() {
+
         GameObject quadHighResGO = quadHighRes.gameObject;
 
-        if (zoom == 1f) {
+        if (currentZoom == 1f) {
             MoveUp(quadLowRes, quadHighRes);
             quadHighResGO.SetActive(false);
         } else { // TODO shouldn't do if prev zoom was also != 1
@@ -72,15 +75,19 @@ public class QuadSwap : MonoBehaviour {
                 quadHighResGO.SetActive(true);
             }
             MoveUp(quadHighRes, quadLowRes);
+            GetCurrentCameraParameters();
             ResizeHighResQuad();
         }
+        Debug.Log("On Zoom Complete callback");
     }
+
 
     private void MoveUp(Transform up, Transform down) {
         up.position = new Vector3(up.position.x, TOP_HEIGHT, up.position.z);
         down.position = new Vector3(down.position.x, BOTTOM_HEIGHT, down.position.z);
     }
 
+    private Vector2 _prevIntersectionSize = Vector2.zero;
     private void ResizeHighResQuad() {
         bool isIntersecting = CalculateQuadCameraIntersection(out Vector2 intersectionCenter, out Vector2 intersectionSize);
         if (isIntersecting) {
@@ -89,7 +96,10 @@ public class QuadSwap : MonoBehaviour {
 
             // Calculate the size of the intersection in pixels
             Vector2 intersectionSizeInPixels = WorldToScreenSize(intersectionSize, cam.orthographicSize, cam.aspect);
-            QuadSizeInPixelsChanged?.Invoke(intersectionSizeInPixels);
+            Debug.Log($"Highresquad resized, new size = {intersectionSize:F5}, prev size = {_prevIntersectionSize:F5} in pixels {intersectionSizeInPixels}");
+            if (_prevIntersectionSize != intersectionSize) {
+                QuadSizeInPixelsChanged?.Invoke(intersectionSizeInPixels);
+            }
         }
     }
 

@@ -82,4 +82,12 @@ public class CameraPan : MonoBehaviour {
         cameraTransform.position += delta;
         TranslationOngoing?.Invoke();
     }
+
+    public void Reset() {
+        cameraTransform.position = new Vector3(0f, 1f, 0f);
+        timeDelta = 0f;
+        previousWSPosition = IILEGAL_POS;
+        previousSSPosition = IILEGAL_POS;
+        delta = Vector3.zero;
+    }
 }

@@ -19,7 +19,6 @@ public class CameraZoom : MonoBehaviour {
     public event Action ZoomComplete;
     public event Action<float> ZoomLevelChanged;
 
-
     public void Start() {
         this.cam = Camera.main;
         this.orthographicSize = cam.orthographicSize;
@@ -53,8 +52,9 @@ public class CameraZoom : MonoBehaviour {
         cam.transform.position += offset;
     }
 
-    public void ResetZoom() {
+    public void Reset() {
         cam.orthographicSize = 1;
+        zoomLevel = 1f;
     }
 
 }

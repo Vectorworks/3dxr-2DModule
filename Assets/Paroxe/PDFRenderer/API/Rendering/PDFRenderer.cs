@@ -353,7 +353,6 @@ namespace Paroxe.PdfRenderer {
         }
 
         [SerializeField] public float scale;
-        [SerializeField] public Vector2 translation;
         [SerializeField] public Vector2 lowResQuadSizePixels;
 
         /// <summary>
@@ -394,7 +393,7 @@ namespace Paroxe.PdfRenderer {
 
             float scaleFactorX = lowResQuadSizePixels.x / pageSize.x;
             float scaleFactorY = lowResQuadSizePixels.y / pageSize.y;
-            Debug.Log("Width: " + width + ", height: " + height + ", Scale factor x: " + scaleFactorX + ", scaleFactorY: " + scaleFactorY + ", top left: " + topLeftRelative + ", bottom right: " + bottomRightRelative);
+            Debug.Log("RenderPagePart, Width: " + width + ", height: " + height + ", Scale factor x: " + scaleFactorX + ", scaleFactorY: " + scaleFactorY + ", top left: " + topLeftRelative + ", bottom right: " + bottomRightRelative);
 
             float scaleF = Mathf.Max(scaleFactorX * scale, scaleFactorY * scale);
             matrix.Scale(scaleF, -scaleF);

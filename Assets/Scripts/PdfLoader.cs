@@ -4,11 +4,9 @@ using System.Runtime.CompilerServices;
 using System;
 
 
-public class PdfLoader : MonoBehaviour, MovementEventsListener {
-
+public class PdfLoader : MonoBehaviour {
     [SerializeField] private GameObject lowResQuad;
     [SerializeField] private GameObject highResQuad;
-
 
     private int currentPageNum = 0;
     private PDFRenderer pdfRenderer;
@@ -16,7 +14,6 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
     private PDFPage currentPage;
 
     private Vector2 prevSize = -Vector2.one;
-
 
     [SerializeField] private CameraZoom cameraZoom;
     [SerializeField] private CameraPan cameraPan;
@@ -31,11 +28,8 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
 
     [SerializeField] public float scale = 1f;
     private float prevScale = 1f;
-    [SerializeField] public Vector2 translation = new Vector2(0f, 1f);
-    private Vector2 prevTranslation;
 
     private Texture2D texDefault;
-
     private Texture2D texHighRes;
 
     private const int MAGIC_NUM_TODO = 1; // TODO screen resolution dependent
@@ -56,11 +50,8 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
         cameraZoom.ZoomLevelChanged += OnZoomLevelChanged;
         cameraZoom.ZoomComplete += OnZoomComplete;
         cameraPan.TranslationOngoing += OnTranslationOngoing;
+        cameraPan.TranslationComplete += OnTranslationComplete;
         quadSwap.QuadSizeInPixelsChanged += OnQuadSizeInPixelsChanged;
-    }
-
-    private void OnZoomLevelChanged(float zoomLevel) {
-        this.zoomLevel = zoomLevel;
     }
 
     private void OnDisable() {
@@ -74,22 +65,28 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
     void Update() {
         if (Input.GetKeyDown("[")) {
             currentPageNum++;
+            ResetPage();
             LoadPage();
         }
 
         if (Input.GetKeyDown("]")) {
             currentPageNum--;
+            ResetPage();
             LoadPage();
         }
 
+        // TODO - no
         pdfRenderer.scale = scale;
-        pdfRenderer.translation = translation;
 
-        if (scale != prevScale || translation != prevTranslation) {
+        if (scale != prevScale) {
+            Debug.Log($"Scale changed, current = {scale}, previous = {prevScale}, reloading page part in Update()");
             LoadPagePart();
             prevScale = scale;
-            prevTranslation = translation;
         }
+    }
+
+    private void OnZoomLevelChanged(float zoomLevel) {
+        this.zoomLevel = zoomLevel;
     }
 
     private void LoadPage() {
@@ -97,7 +94,7 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
         PDFPage p = document.GetPage(currentPageNum);
         currentPage = p;
         Vector2 size = p.GetPageSize();
-        Vector2 proportions = size / new Vector2(Screen.width, Screen.height);  
+        Vector2 proportions = size / new Vector2(Screen.width, Screen.height);
         float a = Mathf.Max(proportions.x, proportions.y);
         size /= a;
 
@@ -116,10 +113,29 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
                 Resources.UnloadAsset(texDefault);
             }
             texDefault = pdfRenderer.RenderPageToTexture(p, width: (int)size.x * MAGIC_NUM_TODO, height: (int)size.y * MAGIC_NUM_TODO);
+            texDefault.filterMode = FilterMode.Point;
             prevSize = size;
         }
 
         lowResQuad.GetComponent<MeshRenderer>().material.mainTexture = texDefault;
+    }
+
+    private void ResetPage() {
+        Debug.Log("Resetting page");
+
+        zoomLevel = 1f;
+
+        scale = 1f;
+        prevScale = 1f;
+        prevSize = -Vector2.one;
+        texDefault = null;
+        texHighRes = null;
+        pdfRenderer.scale = 1f;
+        pdfRenderer.lowResQuadSizePixels = Vector2.zero;
+        highResQuad.SetActive(false);
+
+        cameraZoom.Reset();
+        cameraPan.Reset();
     }
 
     private void ReloadPageHighRes(Vector2 topLeft, Vector2 bottomRight) {
@@ -128,6 +144,7 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
         this.prevScale = zoomLevel;
         pdfRenderer.scale = zoomLevel;
 
+        double timeStart = Time.realtimeSinceStartupAsDouble;
         if (prevSize == size && texHighRes != null) {
             pdfRenderer.RenderPagePartToExistingTexture(currentPage, texHighRes, topLeft, bottomRight);
         } else {
@@ -141,38 +158,44 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
             Vector2 worldSizeLowRes = lowResQuad.transform.localScale;
             Camera cam = Camera.main;
             Vector2 quadLowResScreenSize = QuadSwap.WorldToScreenSize(worldSizeLowRes, cam.orthographicSize, cam.aspect);
-            // TODO - don't pass stuff around like that
+            // TODO - don't pass stuff around like that; also if wrong , it will break the rendering
             pdfRenderer.lowResQuadSizePixels = quadLowResScreenSize;
-            
-            // TODO - size is wrong for initial page load
-            texHighRes = pdfRenderer.RenderPagePartToTexture(currentPage, (int)size.x, (int)size.y, new Vector2(0f,0f), new Vector2(1f, 1f));
-  
 
+            // TODO - size is wrong for initial page load
+            texHighRes = pdfRenderer.RenderPagePartToTexture(currentPage, (int)size.x, (int)size.y, new Vector2(0f, 0f), new Vector2(1f, 1f));
+            texHighRes.filterMode = FilterMode.Point;
             prevSize = size;
         }
+        Debug.Log("Time to render high res: " + (Time.realtimeSinceStartupAsDouble - timeStart) + " seconds");
 
         highResQuad.GetComponent<MeshRenderer>().material.mainTexture = texHighRes;
     }
 
     public void OnZoomComplete() {
-        LoadPagePart();
     }
 
     public void OnTranslationOngoing() {
+    }
+
+    private void OnTranslationComplete() {
+        //Debug.Log("Translation complete");
+        //LoadPagePart();
+    }
+
+    private void OnQuadSizeInPixelsChanged(Vector2 sizeInPixels) {
+        // TODO - unreliable
+        Debug.Log("Quad size in pixels changed");
+
+        if (texHighRes != null) {
+            Debug.Log("Reinit texture");
+            texHighRes.Reinitialize((int)sizeInPixels.x, (int)sizeInPixels.y);
+        }
+
         LoadPagePart();
     }
 
-    private Vector2 prevSizeInPixels = Vector2.zero;
-    private void OnQuadSizeInPixelsChanged(Vector2 sizeInPixels) {
-        if (prevSizeInPixels != sizeInPixels) {
-            Debug.Log("Quad size in pixels changed, reinit texture");
-
-            texHighRes.Reinitialize((int)sizeInPixels.x, (int)sizeInPixels.y);
-            prevSizeInPixels = sizeInPixels;
-        }
-    }
-
     public void LoadPagePart() {
+        Debug.Log("Load page part");
         Vector4 whFactors = GetRelativeRectOnPage();
         Vector2 topLeft = new Vector2(whFactors.x, whFactors.y);
         Vector2 bottomRight = new Vector2(whFactors.z, whFactors.w);
@@ -198,8 +221,8 @@ public class PdfLoader : MonoBehaviour, MovementEventsListener {
         Vector2 bottomRightRelative = (bottomRightHRQAbsolute - topLeftLRQAbsolute) / lrqSize;
 
         // Invert the y coordinates to make them vary between 0 and 1
-        topLeftRelative.y = - topLeftRelative.y;
-        bottomRightRelative.y = - bottomRightRelative.y;
+        topLeftRelative.y = -topLeftRelative.y;
+        bottomRightRelative.y = -bottomRightRelative.y;
 
         return new Vector4(topLeftRelative.x, topLeftRelative.y, bottomRightRelative.x, bottomRightRelative.y);
     }
