@@ -16,8 +16,11 @@ public class CameraZoom : MonoBehaviour {
 
     private RaycastHit zoomCenterHit;
 
+    public event Action ZoomStarted;
     public event Action ZoomComplete;
     public event Action<float> ZoomLevelChanged;
+
+    private bool isZooming = false;
 
     public void Start() {
         this.cam = Camera.main;
@@ -28,9 +31,14 @@ public class CameraZoom : MonoBehaviour {
 
     public void Update() {
         bool hasHit = Physics.Raycast(Camera.main.ScreenPointToRay(Input.mousePosition), out zoomCenterHit);
+        if (!hasHit) return; // TODO works for desktop, not necessary for mobile
 
         float scroll = Input.GetAxis("Mouse ScrollWheel");
         if (scroll != 0f) {
+            if (!isZooming) {
+                isZooming = true;
+                ZoomStarted?.Invoke();
+            }
             zoomLevel = Mathf.Max(1f, zoomLevel + ZOOM_FACTOR * Mathf.Sign(scroll));
             Zoom(zoomLevel);
             ZoomLevelChanged?.Invoke(zoomLevel);
@@ -40,6 +48,7 @@ public class CameraZoom : MonoBehaviour {
             if (previousZoomTime > 0f && Time.time - previousZoomTime > ZOOM_END_DELTA) {
                 previousZoomTime = -1f;
                 ZoomComplete?.Invoke();
+                isZooming = false;
             }
         }
     }

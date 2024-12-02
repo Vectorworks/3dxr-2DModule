@@ -33,6 +33,7 @@ public class PdfLoader : MonoBehaviour {
     private Texture2D texHighRes;
 
     private const int MAGIC_NUM_TODO = 1; // TODO screen resolution dependent
+    private const float PAGE_SCALE_ON_SCREEN = 0.95f;
 
     void Start() {
         pdfRenderer = new PDFRenderer();
@@ -47,6 +48,7 @@ public class PdfLoader : MonoBehaviour {
     }
 
     private void OnEnable() {
+        cameraZoom.ZoomStarted += OnZoomStarted;
         cameraZoom.ZoomLevelChanged += OnZoomLevelChanged;
         cameraZoom.ZoomComplete += OnZoomComplete;
         cameraPan.TranslationOngoing += OnTranslationOngoing;
@@ -55,9 +57,11 @@ public class PdfLoader : MonoBehaviour {
     }
 
     private void OnDisable() {
+        cameraZoom.ZoomStarted -= OnZoomStarted;
         cameraZoom.ZoomLevelChanged -= OnZoomLevelChanged;
         cameraZoom.ZoomComplete -= OnZoomComplete;
         cameraPan.TranslationOngoing -= OnTranslationOngoing;
+        cameraPan.TranslationComplete -= OnTranslationComplete;
         quadSwap.QuadSizeInPixelsChanged -= OnQuadSizeInPixelsChanged;
     }
 
@@ -65,19 +69,20 @@ public class PdfLoader : MonoBehaviour {
     void Update() {
         if (Input.GetKeyDown("[")) {
             currentPageNum++;
-            ResetPage();
+            ResetState();
             LoadPage();
         }
 
         if (Input.GetKeyDown("]")) {
             currentPageNum--;
-            ResetPage();
+            ResetState();
             LoadPage();
         }
 
-        // TODO - no
+        // TODO - don't pass it like that maybe?
         pdfRenderer.scale = scale;
 
+        // TODO - we shouldn't be doing this in Update, only in the OnQuadSizeInPixelsChanged callback
         if (scale != prevScale) {
             Debug.Log($"Scale changed, current = {scale}, previous = {prevScale}, reloading page part in Update()");
             LoadPagePart();
@@ -94,16 +99,14 @@ public class PdfLoader : MonoBehaviour {
         PDFPage p = document.GetPage(currentPageNum);
         currentPage = p;
         Vector2 size = p.GetPageSize();
+        // 
         Vector2 proportions = size / new Vector2(Screen.width, Screen.height);
-        float a = Mathf.Max(proportions.x, proportions.y);
-        size /= a;
+        float maxProportion = Mathf.Max(proportions.x, proportions.y);
+        size /= maxProportion;
 
-        float minDim = Mathf.Min(size.x, size.y);
-        Vector2 quadScale = size / minDim;
-        // TODO - this is wrong
-        Vector2 quadScale1 = QuadSwap.ScreenToWorldSize(size, Camera.main.orthographicSize, Camera.main.aspect);
-
-        lowResQuad.transform.localScale = new Vector3(quadScale.x, quadScale.y, 1f);
+        // Resize to fit the screen with some small margin
+        Vector2 quadScale1 = PAGE_SCALE_ON_SCREEN * QuadSwap.ScreenToWorldSize(size, Camera.main.orthographicSize, Camera.main.aspect);
+        lowResQuad.transform.localScale = new Vector3(quadScale1.x, quadScale1.y, 1f);
 
         if (prevSize == size) {
             pdfRenderer.RenderPageToExistingTexture(p, texDefault);
@@ -112,7 +115,9 @@ public class PdfLoader : MonoBehaviour {
                 DestroyImmediate(texDefault);
                 Resources.UnloadAsset(texDefault);
             }
-            texDefault = pdfRenderer.RenderPageToTexture(p, width: (int)size.x * MAGIC_NUM_TODO, height: (int)size.y * MAGIC_NUM_TODO);
+            size = PAGE_SCALE_ON_SCREEN * size;
+
+            texDefault = pdfRenderer.RenderPageToTexture(p, width: Mathf.RoundToInt(size.x), height: Mathf.RoundToInt(size.y));
             texDefault.filterMode = FilterMode.Point;
             prevSize = size;
         }
@@ -120,8 +125,8 @@ public class PdfLoader : MonoBehaviour {
         lowResQuad.GetComponent<MeshRenderer>().material.mainTexture = texDefault;
     }
 
-    private void ResetPage() {
-        Debug.Log("Resetting page");
+    private void ResetState() {
+        Debug.Log("Resetting state for new page load");
 
         zoomLevel = 1f;
 
@@ -148,12 +153,6 @@ public class PdfLoader : MonoBehaviour {
         if (prevSize == size && texHighRes != null) {
             pdfRenderer.RenderPagePartToExistingTexture(currentPage, texHighRes, topLeft, bottomRight);
         } else {
-            //if (texHighRes != null) {
-            //    Debug.Log("Texture size changed, destroy tex high res");
-            //    DestroyImmediate(texHighRes);
-            //    Resources.UnloadAsset(texHighRes);
-            //}
-            Debug.Log("Creating new texture");
 
             Vector2 worldSizeLowRes = lowResQuad.transform.localScale;
             Camera cam = Camera.main;
@@ -161,8 +160,11 @@ public class PdfLoader : MonoBehaviour {
             // TODO - don't pass stuff around like that; also if wrong , it will break the rendering
             pdfRenderer.lowResQuadSizePixels = quadLowResScreenSize;
 
-            // TODO - size is wrong for initial page load
-            texHighRes = pdfRenderer.RenderPagePartToTexture(currentPage, (int)size.x, (int)size.y, new Vector2(0f, 0f), new Vector2(1f, 1f));
+            Debug.Log("Creating new texture");
+            // TODO - there's a bug with 1 or 2 pixels difference than the base image, maybe we need to pass the relative sizes as double?
+            // TODO - check if all textures are properly disposed
+            // TODO - when initiating the reload with a zoom, there's a problem with the page offset; with pan this doesn't happen
+            texHighRes = pdfRenderer.RenderPagePartToTexture(currentPage, (int)size.x, (int)size.y, topLeft, bottomRight);
             texHighRes.filterMode = FilterMode.Point;
             prevSize = size;
         }
@@ -171,19 +173,31 @@ public class PdfLoader : MonoBehaviour {
         highResQuad.GetComponent<MeshRenderer>().material.mainTexture = texHighRes;
     }
 
-    public void OnZoomComplete() {
+    private void OnZoomStarted() {
+        // When we are zooming, especially when zoomung out, if we use point filtering the texture will look jagged
+        if (texHighRes != null) {
+            texHighRes.filterMode = FilterMode.Bilinear;
+        }
     }
 
+    public void OnZoomComplete() {
+        // If we are not actively zooming the texture should be pixel perfect, so point filtering suffices
+        if (texHighRes != null) {
+            texHighRes.filterMode = FilterMode.Point;
+        }
+    }
+
+    // TODO Unused
     public void OnTranslationOngoing() {
     }
 
+    // TODO Unused
     private void OnTranslationComplete() {
         //Debug.Log("Translation complete");
         //LoadPagePart();
     }
 
     private void OnQuadSizeInPixelsChanged(Vector2 sizeInPixels) {
-        // TODO - unreliable
         Debug.Log("Quad size in pixels changed");
 
         if (texHighRes != null) {
